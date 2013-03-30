@@ -1,0 +1,295 @@
+# Specification of Ponyca protocol
+# ================================
+#
+# Version of this specification
+# -----------------------------
+
+version:
+    major: 0
+    minor: 1
+    status: alpha # ie. it may be changed without bumping the version number.
+
+# Vocabulary
+# ----------
+#
+# StC: Server to Client
+# CtS: Client to Server
+# StS: Server to Server (not yet used)
+# CtC: Client to Client (not yet used)
+#
+# block: part of the map, which has a 1x1x1 size.
+# entity: an object that is not a block.
+#
+# coordinates: 3-items array of uint16. Used for blocks.
+# position: 3-items array of float64 (in [-2^31, 2^31]). Used for entities
+# direction: 2-items array of uint16, in hundredths of a degree. Used for entities
+#
+# size: number of bytes
+# length: number of items (all item have their own size)
+#
+# Format of a packet
+# ------------------
+#
+# In TCP mode:
+#   opcode|size|content
+# In UDP mode: (not yet used)
+#   opcode|size|checksum|content
+# Details:
+# * opcode (2 bytes): Determines how the content should be interpreted.
+# * size (2 bytes, unsigned): Determines the length of the *content*.
+# * checksum (2 bytes): Calculated with successive XOR on the *content*,
+#   2 bytes per 2 bytes. UDP session should be closed if it does not match.
+# * content (even number of bytes). A \0 is suffixed if size is odd.
+#
+# Handshake
+# ---------
+#
+# On connection, server sends a CONNECT packet to the client. The client
+# should close the connection if it does not have the same majorVersion,
+# and display a warning if it does not have the same minorVersion.
+# If majorVersion and minorVersion match, client should send a LOGIN packet
+# to the server.
+#
+# Data types
+# ----------
+
+types:
+    bool:
+        type: bool
+    int8:
+        type: int8_t
+    int16:
+        type: int16_t
+    int32:
+        type: int32_t
+    int64:
+        type: int64_t
+    uint8:
+        type: uint8_t
+    uint16:
+        type: uint16_t
+    uint32:
+        type: uint32_t
+    uint64:
+        type: uint64_t
+    float32:
+        type: float
+    float64:
+        type: double
+    string:
+        # Prefixed with its size (uint16) when serialized
+        type: std::string
+
+    structure:
+        type: Ponyca::Net::AbstractSerializable&
+    list:
+        # Prefixed with its length (uint16) when serialized
+        type: std::vector<Ponyca::Net::AbstractSerializable>&
+
+aliases:
+    # The following are dynamically-attributed identifiers. They start from
+    # 1, as 0 (zero) means we are in a special case, whose meaning is
+    # explicitely defined.
+    clientId: uint32
+    worldId: uint16
+    entityId: uint32
+
+    # The following are defined below
+    entityType: uint16
+    blockType: uint16
+    blockVariant: uint16
+
+# Data structures
+# ---------------
+
+structures:
+    - coordinates:
+        - x: uint32
+        - y: uint32
+        - z: uint32
+    - position:
+        - x: float64
+        - y: float64
+        - z: float64
+    - direction:
+        - vert: uint16
+        - horiz: uint16
+
+    - block:
+        - blockType: blockType
+        - blockVariant: blockVariant # Ignored if this block type has no variants
+    - placedBlock:
+        - id: worldId
+        - coordinates: coordinates
+        - block: block
+    - client:
+        - id: clientId
+    - entity:
+        - id: entityId
+        - position: position
+        - direction: direction
+        - name: string
+        - playedBy: clientId # 0 means played by AI.
+        - entityType: entityType
+        - metadata: list # of strings: key1|value1|key2|value2
+    - protocolVersion:
+        - majorVersion: uint16
+        - minorVersion: uint16
+    - chunk:
+        - list: list # 3D-list of "block".
+
+
+# Opcodes and content of the packet
+# ---------------------------------
+#
+# Of course, the order of packets matters.
+
+opcodes:
+    # 0x0***: COMMON
+    ## 0x00**: CONNECTION
+    - "0x0000":
+        name: connect
+        fields:
+            - protocol: protocolVersion
+            - extensions: list # of strings
+    - "0x0001":
+        name: login
+        fields:
+            - username: string
+            - password: string
+    - "0x0002":
+        name: ping
+        fields:
+            - id: uint32
+    ## 0x01**: CLIENTS
+    - "0x0100":
+        name: requestClientList
+        fields:
+    - "0x0101":
+        name: clientList
+        fields:
+            - list: list
+    - "0x0102":
+        name: getClientToClientAddresses
+        fields:
+            - list: list
+    - "0x0103":
+        name: closeConnection # or kick
+        fields:
+            - clientId: clientId
+            - reason: string
+    ## 0x02**: MESSAGING
+    - "0x0200":
+        name: message
+        fields:
+            - author: clientId # 0 means it's a server message.
+            - content: string
+
+    # 0x1*** MAP
+    ## 0x10** WORLDS
+    - "0x1000":
+        name: worldCreation
+        fields:
+            - id: worldId
+            - name: string
+    - "0x1001":
+        name: worldDestruction
+        fields:
+            - id: worldId
+    - "0x1002": # Not used. Reserved for consistency.
+        name: worldUpdate
+        fields:
+    - "0x1003":
+        name: worldsListRequest
+        fields:
+    - "0x1004":
+        name: worldsList
+        fields:
+            - list: list
+
+    ## 0x11**: BLOCKS
+    - "0x1100": # Not used. Reserved for consistency.
+        name: blockSpawn
+        fields:
+    - "0x1101": # Not used. Reserved for consistency.
+        name: blockDestruction 
+        fields:
+    - "0x1102":
+        name: blockUpdate
+        fields:
+            - block: placedBlock
+    - "0x1103":
+        name: chunkRequest
+        fields:
+            - coordinates: coordinates # Coordinates of any block in the chunk
+    - "0x1104":
+        name: chunkUpdate
+        fields:
+            - coordinates: coordinates # Coordinates of the first block of the chunl
+            - chunk: chunk
+    
+    ## 0x12**: ENTITIES
+    - "0x1200":
+        name: entitySpawn
+        fields:
+            - entity: entity
+    - "0x1201":
+        name: entityDestruction
+        fields:
+            - id: entityId
+    - "0x1202":
+        name: entityUpdate
+        fields:
+            - entity: entity
+    - "0x1203":
+        name: entityListRequest
+        fields:
+    - "0x1204":
+        name: entityList
+        fields:
+            - list: list # List of entities
+    - "0x1205":
+        name: entityMove
+        fields:
+            - id: entityId
+            - newPosition: position
+    - "0x1206":
+        name: entityDirection
+        fields:
+            - id: entityId
+            - newDirection: direction
+    - "0x1207": # Used for updating only one key-value pair
+        name: entityUpdateMetada
+        fields:
+            - id: entityId
+            - key: string
+            - value: string
+
+
+# Block/entity types
+# ------------------
+
+blockTypes:
+    # 0x0***: gas
+    - "0x0000":
+        name: air
+        variants:
+    # 0x1***: liquids
+    - "0x1000":
+        name: water
+        variants:
+    # 0x2***: raw materials
+    - "0x2000":
+        name: wood
+        variants:
+            - "0x0000": oak
+            - "0x0001": birch
+    - "0x2001":
+        name: stone
+        variants:
+
+entityTypes:
+    # 0x0***: humanoids
+    - "0x0000": human
+    # 0x1***: animals
+    - "0x1000": pig
