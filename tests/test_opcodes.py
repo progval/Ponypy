@@ -12,12 +12,12 @@ class TestOpcodes(unittest.TestCase):
             "ponypy.common.opcodes.Block(blockType='foo', blockVariant='bar')")
         self.assertRepr(opcodes.Connect(
             protocol=opcodes.ProtocolVersion(majorVersion=0, minorVersion=1),
-            extensions=[]),
+            extensions=[], clientId=1),
             "ponypy.common.opcodes.Connect("
                 "protocol=ponypy.common.opcodes.ProtocolVersion(majorVersion=0, minorVersion=1), "
-                "extensions=[])")
+                "clientId=1, extensions=[])")
     def testRead(self):
-        packet = b'\x00\x00\x01\x00\x01\x00\x0D\x00\x03\x00foo\x06\x00barbaz'
+        packet = b'\x00\x00\x01\x00\x01\x00\x01\x00\x00\x00\x0D\x00\x03\x00foo\x06\x00barbaz'
         buf = BytesIO(packet)
         op = opcodes.read(buf)
         op.extensions.set_item_type('string')
