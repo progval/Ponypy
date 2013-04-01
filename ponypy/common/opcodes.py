@@ -1,4 +1,4 @@
-__all__ = ['Structure', 'Opcode', 'read', 'write']
+__all__ = ['Structure', 'Opcode', 'read', 'write', 'PROTOCOL_VERSION']
 
 import io
 import yaml
@@ -39,11 +39,15 @@ TYPE_TO_CHAR = {
         }
 
 def pack(format_, buf, *data):
+    """Serialize data according to the format and write it to the buffer."""
     buf.write(struct.pack('<' + format_, *data))
 def unpack(format_, buf):
+    """Read data from the buffer and unserialize it according to the format."""
     data = buf.read(struct.calcsize(format_))
     return struct.unpack('<' + format_, data)
 def unpack_one(format_, buf):
+    """Like :py:func:`ponypy.common.opcodes.unpack`, but returns the first
+    element of the array."""
     return unpack(format_, buf)[0]
 
 def _encode_string(buf, x):
@@ -62,6 +66,7 @@ def _decode_list(buf):
     return List(buf.read(length))
 
 class types:
+    """Namespace / utilities for decoding protocol base types."""
     _encoders = {}
     _decoders = {}
     for (type_, (char, length))  in TYPE_TO_CHAR.items():
@@ -91,6 +96,7 @@ class types:
         _decoders[key] = _decoders[value]
 
 class Structure:
+    """Base class for complex data structures defined by Ponyca protocol."""
     def __init__(self, **kwargs):
         if set(kwargs.keys()) != set(self.field_names):
             raise ProtocolError('%r != %r' % (set(kwargs), set(self.field_names)))
@@ -131,10 +137,14 @@ class Structure:
                  ', '.join(map(lambda x:'%s=%r' % (x, self[x]), self.field_names)))
 
 class Opcode(Structure):
+    """Base class for Ponyca opcodes."""
     _opcodes = {}
     @classproperty
     def opcode(cls):
         return cls._opcode
+    @classproperty
+    def name(cls):
+        return cls.__name__
 
     @classmethod
     def get_subclass(cls, buf):
@@ -160,7 +170,8 @@ def define_structure(name, fields, opcode=None):
     fields = map(lambda field:list(field.items())[0], fields)
     fields = map(lambda x:(x[0],
         STRUCTURES[x[1]] if x[1] in STRUCTURES else x[1]), fields)
-    attributes = {'_fields': list(fields)}
+    attributes = {'_fields': list(fields),
+                  '__doc__': 'Represents %s in the Ponyca protocol.' % name}
     if opcode:
         attributes['_opcode'] = opcode
     structure = type(name, (Opcode if opcode else Structure,), attributes)
@@ -175,8 +186,7 @@ for structure in _document['structures']:
     structure = define_structure(name, fields)
     STRUCTURES[name] = structure
 
-for opcode in _document['opcodes']:
-    (opcode, data) = list(opcode.items())[0]
+for opcode, data in _document['opcodes'].items():
     fields = data['fields'] or []
     name = data['name']
     structure = define_structure(name, fields, opcode)
@@ -234,5 +244,25 @@ def read(buf):
 
 def write(opcode, buf):
     buf.write(bytes(opcode))
+
+PROTOCOL_VERSION = ProtocolVersion(
+        majorVersion=0,
+        minorVersion=1)
+
+BLOCKTYPES = {}
+BLOCKVARIANTS = {}
+for (blocktype, data) in _document['blockTypes'].items():
+    name = data['name']
+    variants = data['variants'] or []
+    BLOCKTYPES[name] = blocktype
+    BLOCKTYPES[blocktype] = name
+    BLOCKVARIANTS[blocktype] = {}
+    for variant in variants:
+        BLOCKVARIANTS[blocktype][variant[0]] = variant[1]
+        BLOCKVARIANTS[blocktype][variant[1]] = variant[0]
+ENTITYTYPES = {}
+for (entitytype, name) in _document['entityTypes'].items():
+    ENTITYTYPES[name] = blocktype
+    ENTITYTYPES[blocktype] = name
 
 logging.info('Opcodes loaded')
