@@ -134,12 +134,23 @@ class Structure:
         for (name, type_) in cls.fields:
             attributes[name] = types.decode(type_, buf)
         return cls(**attributes)
+    @classmethod
+    def from_bytes(cls, data):
+        buf = io.BytesIO(data)
+        buf.seek(0)
+        return cls.from_buffer(buf)
     def to_buffer(self, buf):
         attributes = {}
         for (name, type_) in self.fields:
             types.encode(type_, buf, self.attributes[name])
+    def __bytes__(self):
+        buf = io.BytesIO()
+        self.to_buffer(buf)
+        buf.seek(0)
+        return buf.read()
 
     def __getitem__(self, name):
+        assert isinstance(name, str), name
         if name not in self.field_names:
             raise ProtocolError('%r has no field %r' % (self, name))
         return self._attributes[name]
@@ -185,10 +196,28 @@ def define_structure(name, fields, opcode=None):
     fields = map(lambda field:list(field.items())[0], fields)
     fields = map(lambda x:(x[0],
         STRUCTURES[x[1]] if x[1] in STRUCTURES else x[1]), fields)
-    attributes = {'_fields': list(fields),
+    fields = [x for x in fields]
+    attributes = {'_fields': fields,
                   '__doc__': 'Represents %s in the Ponyca protocol.' % name}
     if opcode:
         attributes['_opcode'] = opcode
+
+    attributes['SIZE'] = 0
+    for (foo, field) in fields:
+        if not isinstance(field, Structure):
+            try:
+                while field not in TYPE_TO_CHAR:
+                    field = _document['aliases'][field]
+            except KeyError:
+                del attributes['SIZE']
+                break
+            attributes['SIZE'] += TYPE_TO_CHAR[field][1]
+        elif hasattr(field, 'SIZE'):
+            attributes['SIZE'] += field.SIZE
+        else:
+            del attributes['SIZE']
+            break
+
     structure = type(name, (Opcode if opcode else Structure,), attributes)
     globals()[name] = structure
     __all__.append(name)
@@ -268,6 +297,7 @@ PROTOCOL_VERSION = ProtocolVersion(
 BLOCKTYPES = {}
 BLOCKVARIANTS = {}
 for (blocktype, data) in _document['blockTypes'].items():
+    blocktype = int(blocktype, 0)
     name = data['name']
     variants = data['variants'] or []
     BLOCKTYPES[name] = blocktype
@@ -280,5 +310,7 @@ ENTITYTYPES = {}
 for (entitytype, name) in _document['entityTypes'].items():
     ENTITYTYPES[name] = blocktype
     ENTITYTYPES[blocktype] = name
+
+CHUNK_SIZE = 100
 
 logging.info('Opcodes loaded')

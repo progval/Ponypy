@@ -9,5 +9,6 @@ setup(name='ponypy',
       url='https://github.com/ProgVal/Ponypy',
       packages=['ponypy', 'ponypy.client', 'ponypy.common', 'ponypy.server'],
       package_data={'ponypy.common': ['opcodes.yml']},
+      scripts=['scripts/ponypy-client.py'],
       )
      
