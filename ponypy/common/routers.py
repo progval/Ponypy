@@ -59,6 +59,8 @@ class LocalServerRouter(AbstractRouter, AbstractServerRepresentation):
         for callback in self.callbacks:
             if hasattr(callback, 'do_handshake'):
                 callback.do_handshake(client)
+    def close_connection(self, message):
+        exit()
 
         
 class LocalClientRouter(AbstractRouter, AbstractClientRepresentation):
@@ -69,4 +71,6 @@ class LocalClientRouter(AbstractRouter, AbstractClientRepresentation):
         self._server = server_router
     def send(self, opcode):
         self.dispatch(self._server, opcode)
+    def close_connection(self, message):
+        exit()
 
